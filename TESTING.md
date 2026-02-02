@@ -36,24 +36,54 @@ This will:
 mvn test
 ```
 
-**Expected Output**: 66 tests passing
+**Expected Output**: 105 tests passing
 
 ## Test Suite Overview
 
-### Complete Test Inventory (66 Tests Total)
+### Complete Test Inventory (105 Tests Total)
 
 | Test File | Tests | Description |
 |-----------|-------|-------------|
-| **TopStoriesApiTest** | 8 | Top Stories API integration tests |
-| **ItemsApiTest** | 21 | Items API and story-to-comment workflow tests |
+| **AApiHealthCheckTest** | 5 | API health checks (runs first to verify API availability) |
+| **TopStoriesApiTest** | 23 | Top Stories API integration tests with error handling and boundary tests |
+| **ItemsApiTest** | 40 | Items API, workflow tests, comprehensive error handling, and boundary tests |
 | **HackerNewsApiClientTest** | 20 | Complete API client coverage |
 | **ItemTest** | 17 | Model validation tests |
+
+### Test Execution Order
+
+Tests run in alphabetical order (configured via Maven Surefire). The health check test ([AApiHealthCheckTest.java](src/test/java/com/hackernews/api/client/AApiHealthCheckTest.java)) runs first to verify API availability. If health checks pass, the remaining integration tests proceed. If the API is unavailable, integration tests are skipped with a helpful message.
 
 ---
 
 ## Detailed Test Listings
 
-### 1. TopStoriesApiTest (8 tests)
+### 1. AApiHealthCheckTest (5 tests)
+
+**Location**: [src/test/java/com/hackernews/api/client/AApiHealthCheckTest.java](src/test/java/com/hackernews/api/client/AApiHealthCheckTest.java)
+
+#### Health Check Tests (5 tests)
+- ✓ Should verify API base endpoint is reachable
+- ✓ Should verify top stories endpoint is accessible
+- ✓ Should verify items endpoint is accessible
+- ✓ Should verify all story type endpoints are accessible
+- ✓ Should verify API response time is acceptable
+
+**Purpose**: These tests run **first** (alphabetically) to verify the Hacker News API is available before running the full test suite. If any health check fails, the API is considered unavailable and integration tests are skipped.
+
+**Run Command**:
+```bash
+mvn test -Dtest=AApiHealthCheckTest
+```
+
+Or run health checks by tag:
+```bash
+mvn test -Dgroups=health-check
+```
+
+---
+
+### 2. TopStoriesApiTest (23 tests)
 
 **Location**: `src/test/java/com/hackernews/api/client/TopStoriesApiTest.java`
 
@@ -67,6 +97,25 @@ mvn test
 #### Workflow Tests (1 test)
 - ✓ Should demonstrate typical top stories usage pattern
 
+#### Error Handling Tests (9 tests)
+- ✓ Should return null for extremely large non-existent item ID
+- ✓ Should return null for zero item ID
+- ✓ Should return null for negative item ID
+- ✓ Should handle deleted items gracefully
+- ✓ Should validate top stories list is not null
+- ✓ Should handle fetching multiple invalid items without throwing exceptions
+- ✓ Should verify API returns valid response structure for top stories
+- ✓ Should verify item response structure for valid story
+- ✓ Should handle mix of valid and invalid item IDs correctly
+
+#### Boundary Tests (6 tests)
+- ✓ Should return null for Long.MIN_VALUE item ID
+- ✓ Should validate top stories list size is within bounds
+- ✓ Should verify all story types from different endpoints
+- ✓ Should verify first and last IDs in top stories list are valid
+- ✓ Should handle checking items just before and after max item ID
+- ✓ Should verify top stories IDs are monotonically increasing
+
 #### Performance Tests (2 tests)
 - ✓ Should fetch top stories within reasonable time
 - ✓ Should handle concurrent top stories requests
@@ -78,7 +127,7 @@ mvn test -Dtest=TopStoriesApiTest
 
 ---
 
-### 2. ItemsApiTest (21 tests)
+### 3. ItemsApiTest (40 tests)
 
 **Location**: `src/test/java/com/hackernews/api/client/ItemsApiTest.java`
 
@@ -113,9 +162,30 @@ mvn test -Dtest=TopStoriesApiTest
 - ✓ Should fetch item within reasonable time
 - ✓ Should fetch multiple items efficiently
 
-#### Error Handling Tests (2 tests)
+#### Error Handling Tests (11 tests)
 - ✓ Should handle null response gracefully
 - ✓ Should handle deleted item
+- ✓ Should return null for zero item ID
+- ✓ Should return null for negative item ID
+- ✓ Should return null for extremely large item ID
+- ✓ Should handle multiple invalid item IDs without throwing exceptions
+- ✓ Should validate item response structure
+- ✓ Should handle mix of valid and invalid item IDs correctly
+- ✓ Should verify all top story IDs return valid items or null
+- ✓ Should validate timestamp is within reasonable range
+- ✓ Should validate author username format
+
+#### Boundary Tests (10 tests)
+- ✓ Should return null for Long.MIN_VALUE
+- ✓ Should handle item ID just beyond max item ID
+- ✓ Should verify current max item ID is fetchable
+- ✓ Should handle very old item IDs from early HN history
+- ✓ Should find and validate all item types
+- ✓ Should handle item with exactly one comment
+- ✓ Should find and validate Ask HN post with no URL
+- ✓ Should validate descendants count matches kids array
+- ✓ Should test deep comment nesting hierarchy
+- ✓ Should handle items with large kids arrays
 
 **Run Command**:
 ```bash
@@ -129,7 +199,7 @@ mvn test -Dtest=ItemsApiTest$StoryToCommentWorkflowTests
 
 ---
 
-### 3. HackerNewsApiClientTest (20 tests)
+### 4. HackerNewsApiClientTest (20 tests)
 
 **Location**: `src/test/java/com/hackernews/api/client/HackerNewsApiClientTest.java`
 
@@ -176,7 +246,7 @@ mvn test -Dtest=HackerNewsApiClientTest
 
 ---
 
-### 4. ItemTest (17 tests)
+### 5. ItemTest (17 tests)
 
 **Location**: `src/test/java/com/hackernews/api/model/ItemTest.java`
 
@@ -230,6 +300,16 @@ mvn test -Dgroups=integration
 ### Run All Performance Tests
 ```bash
 mvn test -Dgroups=performance
+```
+
+### Run All Error Handling Tests
+```bash
+mvn test -Dgroups=error-handling
+```
+
+### Run All Boundary Tests
+```bash
+mvn test -Dgroups=boundary
 ```
 
 ### Run Multiple Test Classes
@@ -386,9 +466,23 @@ Step 3: Retrieved first comment
 
 ## Summary
 
-- **Total Tests**: 66
-- **Test Execution Time**: ~10-15 seconds
+- **Total Tests**: 105
+- **Test Execution Time**: ~90-120 seconds
 - **API Endpoints Tested**: Items, Users, Top Stories, New Stories, Best Stories, Ask, Show, Jobs
-- **Test Coverage**: Integration tests, performance tests, error handling, workflow validation
+- **Test Coverage**: API health checks, integration tests, performance tests, comprehensive error handling, boundary tests, workflow validation, response structure validation
+- **Health Check Tests**: 5 smoke tests to verify API availability before running integration tests
+- **Error Path Tests**: 20 comprehensive error handling and validation tests
+- **Boundary Tests**: 16 boundary and edge case tests
+- **Return Code Validation**: Included in response structure validation tests
 
-**Quick Run**: `mvn test` - Runs all 66 tests and validates complete API functionality!
+**Test Categories by Tag**:
+- `health-check` - API health and availability tests (run first)
+- `integration` - Integration tests calling live API
+- `performance` - Performance benchmark tests
+- `error-handling` - Error path and validation tests
+- `boundary` - Boundary and edge case tests
+
+**Test Execution Strategy**:
+Maven Surefire is configured to run tests in alphabetical order. [AApiHealthCheckTest](src/test/java/com/hackernews/api/client/AApiHealthCheckTest.java) runs first to verify API availability. If health checks pass, integration tests proceed. If the API is unavailable, integration tests skip automatically with a helpful message.
+
+**Quick Run**: `mvn test` - Runs all 105 tests and validates complete API functionality with comprehensive error handling and boundary testing!

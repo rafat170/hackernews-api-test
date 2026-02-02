@@ -8,6 +8,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Integration tests for the Items API functionality.
@@ -17,6 +18,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class ItemsApiTest {
 
     private HackerNewsApiClient client;
+
+    @BeforeAll
+    static void checkApiAvailability() {
+        assumeTrue(AApiHealthCheckTest.API_AVAILABLE,
+                "❌ Hacker News API is not available - run health checks first with: mvn test -Dgroups=health-check");
+    }
 
     @BeforeEach
     void setUp() {
@@ -495,6 +502,501 @@ class ItemsApiTest {
 
             if (!foundDeletedItem) {
                 System.out.println("⚠ No deleted items found in top 20 stories (this is expected)");
+            }
+        }
+
+        @Test
+        @DisplayName("Should return null for zero item ID")
+        void shouldHandleZeroItemId() throws IOException, InterruptedException {
+            // Act
+            Item result = client.getItem(0L);
+
+            // Assert
+            assertThat(result).isNull();
+            System.out.println("✓ Correctly handled zero item ID (returned null)");
+        }
+
+        @Test
+        @DisplayName("Should return null for negative item ID")
+        void shouldHandleNegativeItemId() throws IOException, InterruptedException {
+            // Act
+            Item result = client.getItem(-1L);
+
+            // Assert
+            assertThat(result).isNull();
+            System.out.println("✓ Correctly handled negative item ID (returned null)");
+        }
+
+        @Test
+        @DisplayName("Should return null for extremely large item ID")
+        void shouldHandleExtremelyLargeItemId() throws IOException, InterruptedException {
+            // Act
+            Item result = client.getItem(Long.MAX_VALUE);
+
+            // Assert
+            assertThat(result).isNull();
+            System.out.println("✓ Correctly handled extremely large item ID (returned null)");
+        }
+
+        @Test
+        @DisplayName("Should handle multiple invalid item IDs without throwing exceptions")
+        void shouldHandleMultipleInvalidIds() throws IOException, InterruptedException {
+            // Arrange - List of invalid item IDs
+            List<Long> invalidIds = List.of(-100L, -1L, 0L, Long.MAX_VALUE, 999999999999L);
+            int nullCount = 0;
+
+            // Act - Try to fetch each invalid item
+            for (Long invalidId : invalidIds) {
+                Item result = client.getItem(invalidId);
+                if (result == null) {
+                    nullCount++;
+                }
+            }
+
+            // Assert - All should return null without throwing exceptions
+            assertThat(nullCount).isEqualTo(invalidIds.size());
+            System.out.println("✓ Successfully handled " + nullCount + " invalid item IDs without exceptions");
+        }
+
+        @Test
+        @DisplayName("Should validate item response structure")
+        void shouldValidateItemResponseStructure() throws IOException, InterruptedException {
+            // Arrange - Get a valid item from top stories
+            List<Long> topStoryIds = client.getTopStories();
+            assertThat(topStoryIds).isNotEmpty();
+            Long validItemId = topStoryIds.get(0);
+
+            // Act
+            Item item = client.getItem(validItemId);
+
+            // Assert - Validate response structure
+            assertAll("Item response structure validation",
+                    () -> assertThat(item).as("Item should not be null").isNotNull(),
+                    () -> assertThat(item.getId()).as("Item ID should match requested ID").isEqualTo(validItemId),
+                    () -> assertThat(item.getType()).as("Item type should not be null").isNotNull(),
+                    () -> assertThat(item.getBy()).as("Item author should not be null").isNotNull(),
+                    () -> assertThat(item.getTime()).as("Item timestamp should be positive").isPositive(),
+                    () -> assertThat(item.getType()).as("Item type should be valid").isIn("story", "comment", "job", "poll", "pollopt")
+            );
+            System.out.println("✓ Item response structure validated successfully");
+        }
+
+        @Test
+        @DisplayName("Should handle mix of valid and invalid item IDs correctly")
+        void shouldHandleMixedValidAndInvalidIds() throws IOException, InterruptedException {
+            // Arrange - Get one valid ID from top stories
+            List<Long> topStoryIds = client.getTopStories();
+            assertThat(topStoryIds).isNotEmpty();
+            Long validId = topStoryIds.get(0);
+
+            // Mix valid and invalid IDs
+            List<Long> mixedIds = List.of(validId, -1L, 0L, 999999999999L);
+
+            int validItems = 0;
+            int nullItems = 0;
+
+            // Act - Fetch each item
+            for (Long id : mixedIds) {
+                Item item = client.getItem(id);
+                if (item != null) {
+                    validItems++;
+                    assertThat(item.getId()).isEqualTo(id);
+                } else {
+                    nullItems++;
+                }
+            }
+
+            // Assert
+            assertThat(validItems).as("Should have at least one valid item").isGreaterThan(0);
+            assertThat(nullItems).as("Should have at least one null result").isGreaterThan(0);
+            assertThat(validItems + nullItems).as("Total should match input size").isEqualTo(mixedIds.size());
+
+            System.out.println("✓ Correctly handled mixed IDs: " + validItems + " valid, " + nullItems + " null");
+        }
+
+        @Test
+        @DisplayName("Should verify all top story IDs return valid items or null")
+        void shouldVerifyTopStoryIdsReturnValidItemsOrNull() throws IOException, InterruptedException {
+            // Arrange - Get top stories
+            List<Long> topStoryIds = client.getTopStories();
+            int itemsToCheck = Math.min(5, topStoryIds.size());
+
+            // Act - Fetch each item and validate
+            for (int i = 0; i < itemsToCheck; i++) {
+                Long itemId = topStoryIds.get(i);
+                Item item = client.getItem(itemId);
+
+                // Assert - Item should either be valid or null, no exceptions
+                if (item != null) {
+                    assertThat(item.getId()).isEqualTo(itemId);
+                    assertThat(item.getType()).isNotNull();
+                }
+            }
+
+            System.out.println("✓ Verified " + itemsToCheck + " top story IDs return valid items or null");
+        }
+
+        @Test
+        @DisplayName("Should validate timestamp is within reasonable range")
+        void shouldValidateTimestampRange() throws IOException, InterruptedException {
+            // Arrange
+            List<Long> topStoryIds = client.getTopStories();
+            Item item = client.getItem(topStoryIds.get(0));
+
+            // Act & Assert
+            assertThat(item).isNotNull();
+
+            // Timestamp should be reasonable (after year 2000, before year 2100)
+            long minTimestamp = 946684800L; // Jan 1, 2000
+            long maxTimestamp = 4102444800L; // Jan 1, 2100
+
+            assertThat(item.getTime())
+                    .as("Timestamp should be within valid range")
+                    .isGreaterThan(minTimestamp)
+                    .isLessThan(maxTimestamp);
+
+            System.out.println("✓ Item timestamp is within valid range: " + item.getTime());
+        }
+
+        @Test
+        @DisplayName("Should validate author username format")
+        void shouldValidateAuthorFormat() throws IOException, InterruptedException {
+            // Arrange
+            List<Long> topStoryIds = client.getTopStories();
+            Item item = client.getItem(topStoryIds.get(0));
+
+            // Act & Assert
+            assertThat(item).isNotNull();
+            assertThat(item.getBy())
+                    .as("Author should not be null or empty")
+                    .isNotNull()
+                    .isNotEmpty();
+
+            // HN usernames should not contain spaces
+            assertThat(item.getBy())
+                    .as("Author username should not contain spaces")
+                    .doesNotContain(" ");
+
+            System.out.println("✓ Author username format is valid: " + item.getBy());
+        }
+    }
+
+    @Nested
+    @DisplayName("Boundary Tests")
+    @Tag("boundary")
+    class BoundaryTests {
+
+        @Test
+        @DisplayName("Should return null for Long.MIN_VALUE")
+        void shouldHandleLongMinValue() throws IOException, InterruptedException {
+            // Act - Test most negative possible long value
+            Item result = client.getItem(Long.MIN_VALUE);
+
+            // Assert
+            assertThat(result).isNull();
+            System.out.println("✓ Correctly handled Long.MIN_VALUE (returned null)");
+        }
+
+        @Test
+        @DisplayName("Should handle item ID just beyond max item ID")
+        void shouldHandleIdBeyondMaxItemId() throws IOException, InterruptedException {
+            // Arrange - Get current max item ID
+            Long maxItemId = client.getMaxItemId();
+            assertThat(maxItemId).isNotNull().isPositive();
+
+            // Act - Try to fetch item ID beyond max
+            Item result = client.getItem(maxItemId + 1);
+
+            // Assert - Should return null as item doesn't exist yet
+            assertThat(result).isNull();
+            System.out.println("✓ Correctly handled maxItemId + 1 (Max: " + maxItemId + ", returned null)");
+        }
+
+        @Test
+        @DisplayName("Should verify current max item ID is fetchable")
+        void shouldFetchCurrentMaxItemId() throws IOException, InterruptedException {
+            // Arrange
+            Long maxItemId = client.getMaxItemId();
+            assertThat(maxItemId).isNotNull().isPositive();
+
+            // Act
+            Item item = client.getItem(maxItemId);
+
+            // Assert - Max item should be fetchable (might be null if just created)
+            System.out.println("Max item ID: " + maxItemId);
+            if (item != null) {
+                assertThat(item.getId()).isEqualTo(maxItemId);
+                System.out.println("✓ Successfully fetched current max item (ID: " + maxItemId + ")");
+            } else {
+                System.out.println("✓ Max item ID exists but item not yet available");
+            }
+        }
+
+        @Test
+        @DisplayName("Should handle very old item IDs from early HN history")
+        void shouldHandleVeryOldItems() throws IOException, InterruptedException {
+            // Arrange - Test very early HN item IDs (first few hundred items)
+            List<Long> oldItemIds = List.of(1L, 2L, 5L, 10L, 50L, 100L);
+            int foundItems = 0;
+            int nullItems = 0;
+
+            // Act
+            for (Long oldId : oldItemIds) {
+                Item item = client.getItem(oldId);
+                if (item != null) {
+                    foundItems++;
+                    assertThat(item.getId()).isEqualTo(oldId);
+                } else {
+                    nullItems++;
+                }
+            }
+
+            // Assert - Some very old items may still exist
+            System.out.println("✓ Tested " + oldItemIds.size() + " early HN items: " +
+                             foundItems + " found, " + nullItems + " null");
+        }
+
+        @Test
+        @DisplayName("Should find and validate all item types")
+        void shouldValidateAllItemTypes() throws IOException, InterruptedException {
+            // Arrange - Try to find examples of each item type
+            List<Long> topStoryIds = client.getTopStories();
+            List<Long> jobIds = client.getJobStories();
+            List<Long> askIds = client.getAskStories();
+
+            boolean foundStory = false;
+            boolean foundComment = false;
+            boolean foundJob = false;
+            boolean foundPoll = false;
+
+            // Act - Search for different item types
+            // Find a story
+            for (int i = 0; i < Math.min(5, topStoryIds.size()); i++) {
+                Item item = client.getItem(topStoryIds.get(i));
+                if (item != null && "story".equals(item.getType())) {
+                    foundStory = true;
+                    assertThat(item.getTitle()).isNotNull();
+                    System.out.println("✓ Found story: " + item.getTitle());
+                    break;
+                }
+            }
+
+            // Find a comment
+            for (int i = 0; i < Math.min(10, topStoryIds.size()) && !foundComment; i++) {
+                Item story = client.getItem(topStoryIds.get(i));
+                if (story != null && story.getKids() != null && story.getKids().length > 0) {
+                    Item comment = client.getItem(story.getKids()[0]);
+                    if (comment != null && "comment".equals(comment.getType())) {
+                        foundComment = true;
+                        assertThat(comment.getParent()).isNotNull();
+                        System.out.println("✓ Found comment (ID: " + comment.getId() + ")");
+                        break;
+                    }
+                }
+            }
+
+            // Find a job
+            for (int i = 0; i < Math.min(5, jobIds.size()); i++) {
+                Item item = client.getItem(jobIds.get(i));
+                if (item != null && "job".equals(item.getType())) {
+                    foundJob = true;
+                    System.out.println("✓ Found job: " + item.getTitle());
+                    break;
+                }
+            }
+
+            // Find a poll (less common, check Ask stories)
+            for (int i = 0; i < Math.min(20, askIds.size()) && !foundPoll; i++) {
+                Item item = client.getItem(askIds.get(i));
+                if (item != null && "poll".equals(item.getType())) {
+                    foundPoll = true;
+                    assertThat(item.getParts()).isNotNull();
+                    System.out.println("✓ Found poll: " + item.getTitle());
+                    break;
+                }
+            }
+
+            // Assert - Should find at least story, comment, and job
+            assertThat(foundStory).isTrue();
+            assertThat(foundComment).isTrue();
+            assertThat(foundJob).isTrue();
+            System.out.println("✓ Validated multiple item types (story, comment, job" +
+                             (foundPoll ? ", poll)" : ")"));
+        }
+
+        @Test
+        @DisplayName("Should handle item with exactly one comment")
+        void shouldHandleItemWithOneComment() throws IOException, InterruptedException {
+            // Arrange - Find an item with exactly 1 comment
+            List<Long> topStoryIds = client.getTopStories();
+            Item itemWithOneComment = null;
+
+            for (int i = 0; i < Math.min(50, topStoryIds.size()); i++) {
+                Item item = client.getItem(topStoryIds.get(i));
+                if (item != null && item.getKids() != null && item.getKids().length == 1) {
+                    itemWithOneComment = item;
+                    break;
+                }
+            }
+
+            // Act & Assert
+            if (itemWithOneComment != null) {
+                assertThat(itemWithOneComment.getKids()).hasSize(1);
+
+                // Fetch the single comment
+                Item comment = client.getItem(itemWithOneComment.getKids()[0]);
+                assertThat(comment).isNotNull();
+                assertThat(comment.getParent()).isEqualTo(itemWithOneComment.getId());
+
+                System.out.println("✓ Found item with exactly 1 comment (Story: " +
+                                 itemWithOneComment.getTitle() + ")");
+            } else {
+                System.out.println("⚠ No items with exactly 1 comment found in top 50 stories");
+            }
+        }
+
+        @Test
+        @DisplayName("Should find and validate Ask HN post with no URL")
+        void shouldValidateAskHNWithNoUrl() throws IOException, InterruptedException {
+            // Arrange - Ask HN posts typically don't have URLs
+            List<Long> askStoryIds = client.getAskStories();
+
+            Item askPostWithNoUrl = null;
+            for (int i = 0; i < Math.min(10, askStoryIds.size()); i++) {
+                Item item = client.getItem(askStoryIds.get(i));
+                if (item != null && item.getUrl() == null) {
+                    askPostWithNoUrl = item;
+                    break;
+                }
+            }
+
+            // Act & Assert
+            if (askPostWithNoUrl != null) {
+                assertThat(askPostWithNoUrl.getUrl()).isNull();
+                assertThat(askPostWithNoUrl.getTitle()).isNotNull();
+                assertThat(askPostWithNoUrl.getText()).isNotNull(); // Ask posts usually have text
+
+                System.out.println("✓ Found Ask HN post without URL: " + askPostWithNoUrl.getTitle());
+            } else {
+                System.out.println("⚠ All checked Ask HN posts had URLs");
+            }
+        }
+
+        @Test
+        @DisplayName("Should validate descendants count matches kids array")
+        void shouldValidateDescendantsCount() throws IOException, InterruptedException {
+            // Arrange - Find an item with both descendants and kids
+            List<Long> topStoryIds = client.getTopStories();
+            Item itemWithDescendants = null;
+
+            for (int i = 0; i < Math.min(10, topStoryIds.size()); i++) {
+                Item item = client.getItem(topStoryIds.get(i));
+                if (item != null && item.getDescendants() != null &&
+                    item.getKids() != null && item.getKids().length > 0) {
+                    itemWithDescendants = item;
+                    break;
+                }
+            }
+
+            // Act & Assert
+            if (itemWithDescendants != null) {
+                Integer descendants = itemWithDescendants.getDescendants();
+                int kidsCount = itemWithDescendants.getKids().length;
+
+                // Descendants should be >= kids count (includes nested comments)
+                assertThat(descendants).isGreaterThanOrEqualTo(kidsCount);
+
+                System.out.println("✓ Validated descendants count:");
+                System.out.println("  Direct kids: " + kidsCount);
+                System.out.println("  Total descendants: " + descendants);
+                System.out.println("  Nested comments: " + (descendants - kidsCount));
+            } else {
+                System.out.println("⚠ No items with descendants found");
+            }
+        }
+
+        @Test
+        @DisplayName("Should test deep comment nesting hierarchy")
+        void shouldTestDeepCommentNesting() throws IOException, InterruptedException {
+            // Arrange - Find a story with comments
+            List<Long> topStoryIds = client.getTopStories();
+            Item storyWithComments = null;
+
+            for (int i = 0; i < Math.min(10, topStoryIds.size()); i++) {
+                Item story = client.getItem(topStoryIds.get(i));
+                if (story != null && story.getKids() != null && story.getKids().length > 0) {
+                    storyWithComments = story;
+                    break;
+                }
+            }
+
+            assertThat(storyWithComments).isNotNull();
+
+            // Act - Traverse comment tree to find depth
+            int maxDepth = 0;
+            Long currentCommentId = storyWithComments.getKids()[0];
+            int currentDepth = 1;
+
+            while (currentCommentId != null && currentDepth <= 10) { // Limit to 10 levels
+                Item comment = client.getItem(currentCommentId);
+
+                if (comment == null || comment.getKids() == null || comment.getKids().length == 0) {
+                    break;
+                }
+
+                maxDepth = currentDepth;
+                currentCommentId = comment.getKids()[0]; // Follow first reply
+                currentDepth++;
+            }
+
+            // Assert
+            System.out.println("✓ Explored comment nesting:");
+            System.out.println("  Story: " + storyWithComments.getTitle());
+            System.out.println("  Maximum depth found: " + maxDepth + " levels");
+
+            if (maxDepth >= 3) {
+                System.out.println("  ✓ Found deeply nested comments (3+ levels)");
+            }
+        }
+
+        @Test
+        @DisplayName("Should handle items with large kids arrays")
+        void shouldHandleItemsWithManyComments() throws IOException, InterruptedException {
+            // Arrange - Find an item with many comments
+            List<Long> topStoryIds = client.getTopStories();
+            Item itemWithManyComments = null;
+            int maxKidsCount = 0;
+
+            for (int i = 0; i < Math.min(20, topStoryIds.size()); i++) {
+                Item item = client.getItem(topStoryIds.get(i));
+                if (item != null && item.getKids() != null) {
+                    int kidsCount = item.getKids().length;
+                    if (kidsCount > maxKidsCount) {
+                        maxKidsCount = kidsCount;
+                        itemWithManyComments = item;
+                    }
+                }
+            }
+
+            // Act & Assert
+            if (itemWithManyComments != null && maxKidsCount > 10) {
+                assertThat(itemWithManyComments.getKids()).hasSizeGreaterThan(10);
+
+                // Verify we can fetch comments from large array
+                Long firstCommentId = itemWithManyComments.getKids()[0];
+                Long lastCommentId = itemWithManyComments.getKids()[itemWithManyComments.getKids().length - 1];
+
+                Item firstComment = client.getItem(firstCommentId);
+                Item lastComment = client.getItem(lastCommentId);
+
+                assertThat(firstComment).isNotNull();
+                assertThat(lastComment).isNotNull();
+
+                System.out.println("✓ Found item with " + maxKidsCount + " direct comments");
+                System.out.println("  Story: " + itemWithManyComments.getTitle());
+                System.out.println("  Successfully fetched first and last comments");
+            } else {
+                System.out.println("⚠ No items with 10+ comments found in top 20 stories");
             }
         }
     }

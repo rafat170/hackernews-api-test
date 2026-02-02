@@ -32,3 +32,6 @@ hs_err_pid*
 # OS
 .DS_Store
 Thumbs.db
+
+# Reports
+IMPLEMENTATION_REPORT.md

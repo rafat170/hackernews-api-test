@@ -87,6 +87,49 @@ System.out.println("Karma: " + user.getKarma());
 mvn clean compile exec:java -Dexec.mainClass="com.hackernews.api.example.Example"
 ```
 
+## Testing
+
+The project includes a comprehensive test suite with **105 integration tests** that validate all API functionality against the live Hacker News API.
+
+### Quick Test Run
+
+```bash
+mvn test
+```
+
+### Test Suite Highlights
+
+- **105 total tests** covering all API endpoints
+- **API health checks** that run first to verify API availability
+- **Integration tests** against the live Hacker News API
+- **Error handling tests** for edge cases and invalid inputs
+- **Boundary tests** for extreme values and limits
+- **Performance tests** with timing benchmarks
+- **Workflow tests** demonstrating real-world usage patterns
+
+### Test Categories
+
+Run specific test categories:
+
+```bash
+# Run only health checks
+mvn test -Dgroups=health-check
+
+# Run integration tests
+mvn test -Dgroups=integration
+
+# Run performance tests
+mvn test -Dgroups=performance
+
+# Run error handling tests
+mvn test -Dgroups=error-handling
+
+# Run boundary tests
+mvn test -Dgroups=boundary
+```
+
+For detailed testing documentation, see [TESTING.md](TESTING.md).
+
 ## API Reference
 
 This client uses the official Hacker News API: https://github.com/HackerNews/API
